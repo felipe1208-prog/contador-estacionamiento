@@ -52,7 +52,7 @@ body {
 }
 
 /* ==========================================================================
-   INTERFAZ (HUD)
+   INTERFAZ (HUD) - ESCRITORIO
    ========================================================================== */
 #ui-overlay {
   position: fixed;
@@ -71,6 +71,10 @@ body {
     "controls . telemetry";
   padding: 18px;
   gap: 16px;
+}
+
+.mobile-ui-toggle {
+  display: none; /* Oculto en tablets y PC */
 }
 
 .hud-header {
@@ -367,7 +371,7 @@ body {
 }
 
 /* ==========================================================================
-   PANEL LATERAL: OCUPACIÓN Y DEFENSA
+   PANEL LATERAL: OCUPACIÓN
    ========================================================================== */
 .telemetry-panel {
   grid-area: telemetry;
@@ -507,7 +511,7 @@ body {
   margin-top: 2px;
 }
 
-/* Resumen simple de barreras */
+/* Resumen de barreras */
 .status-summary-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -671,7 +675,10 @@ body {
   font-weight: 700;
 }
 
-@media (max-width: 900px) {
+/* ==========================================================================
+   VISTA TABLET (769px a 900px) - INTACTA
+   ========================================================================== */
+@media (min-width: 769px) and (max-width: 900px) {
   #ui-overlay {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr auto;
@@ -683,5 +690,386 @@ body {
   }
   .control-panel {
     display: none;
+  }
+}
+
+/* ==========================================================================
+   VISTA MÓVIL ESTRICTA (<= 768px: 420px, 375px y 320px)
+   ========================================================================== */
+@media (max-width: 768px) {
+  #ui-overlay {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 8px;
+    gap: 4px;
+    overflow: hidden; /* Cero scroll en el overlay para tocar el 3D */
+    pointer-events: none;
+  }
+
+  .hud-header,
+  .control-panel,
+  .telemetry-panel,
+  .mobile-ui-toggle {
+    pointer-events: auto;
+  }
+
+  /* Botón ocultar/mostrar */
+  .mobile-ui-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 999;
+    background: var(--bg-surface-elevated);
+    border: 1px solid var(--border-strong);
+    color: var(--text-primary);
+    padding: 5px 9px;
+    border-radius: 20px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+    transition:
+      transform 0.15s ease,
+      background 0.15s ease;
+  }
+
+  .mobile-ui-toggle:active {
+    transform: scale(0.94);
+  }
+
+  .mobile-ui-toggle .eye-closed {
+    display: none;
+  }
+
+  /* Estado Plegado */
+  #ui-overlay.ui-collapsed .mobile-ui-toggle .eye-open {
+    display: none;
+  }
+
+  #ui-overlay.ui-collapsed .mobile-ui-toggle .eye-closed {
+    display: block;
+  }
+
+  #ui-overlay.ui-collapsed .hud-header,
+  #ui-overlay.ui-collapsed .control-panel,
+  #ui-overlay.ui-collapsed .telemetry-panel {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-8px);
+    max-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: none;
+  }
+
+  /* Encabezado compacto arriba */
+  .hud-header {
+    width: 100%;
+    max-width: calc(100% - 85px);
+    gap: 4px;
+    transition: all 0.25s ease;
+  }
+
+  .header-brand {
+    padding: 6px 10px;
+  }
+
+  .header-brand h1 {
+    font-size: 0.85rem;
+    line-height: 1.15;
+  }
+
+  .badge {
+    font-size: 0.55rem;
+    margin-bottom: 1px;
+  }
+
+  .chips-info {
+    font-size: 0.62rem;
+    margin-top: 1px;
+  }
+
+  .alarm-banner {
+    padding: 4px 8px;
+    gap: 6px;
+  }
+
+  .alarm-led {
+    width: 7px;
+    height: 7px;
+  }
+
+  .alarm-text {
+    font-size: 0.65rem;
+  }
+
+  /* BOTONES SUMAR Y RESTAR: Pequeños, abajo a la derecha, sin ocupar el medio */
+  .control-panel {
+    display: flex;
+    flex-direction: column;
+    align-self: flex-end; /* Alineado abajo a la derecha */
+    margin-top: auto; /* Despeja el centro completo de la pantalla */
+    margin-bottom: 2px;
+    width: auto;
+    max-width: fit-content;
+    padding: 4px 6px;
+    gap: 0;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+    transition: all 0.25s ease;
+  }
+
+  /* Se eliminan títulos y sensores manuales para no saturar la pantalla */
+  .control-panel .panel-section-title,
+  .control-panel .manual-section {
+    display: none;
+  }
+
+  .quick-actions-grid {
+    display: flex;
+    flex-direction: row; /* Uno al lado del otro */
+    gap: 4px;
+  }
+
+  .action-btn {
+    padding: 4px 8px;
+    gap: 4px;
+    border-radius: var(--radius-sm);
+    width: auto;
+  }
+
+  .btn-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .btn-icon svg {
+    width: 13px;
+    height: 13px;
+    stroke-width: 2.5;
+  }
+
+  .btn-title {
+    font-size: 0.68rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .btn-sub {
+    display: none;
+  }
+
+  /* Telemetría compacta abajo */
+  .telemetry-panel {
+    width: 100%;
+    max-width: 100%;
+    padding: 8px 10px;
+    gap: 5px;
+    transition: all 0.25s ease;
+  }
+
+  .telemetry-panel .panel-section-title {
+    font-size: 0.6rem;
+  }
+
+  .display-container {
+    padding: 5px 8px;
+    gap: 8px;
+  }
+
+  .seven-segment-wrapper {
+    padding: 3px 5px;
+  }
+
+  .seven-segment {
+    width: 16px;
+    height: 28px;
+  }
+
+  .seg-a {
+    top: 0;
+    left: 2px;
+    width: 12px;
+    height: 3px;
+  }
+  .seg-b {
+    top: 2px;
+    right: 0;
+    width: 3px;
+    height: 11px;
+  }
+  .seg-c {
+    bottom: 2px;
+    right: 0;
+    width: 3px;
+    height: 11px;
+  }
+  .seg-d {
+    bottom: 0;
+    left: 2px;
+    width: 12px;
+    height: 3px;
+  }
+  .seg-e {
+    bottom: 2px;
+    left: 0;
+    width: 3px;
+    height: 11px;
+  }
+  .seg-f {
+    top: 2px;
+    left: 0;
+    width: 3px;
+    height: 11px;
+  }
+  .seg-g {
+    top: 12px;
+    left: 2px;
+    width: 12px;
+    height: 3px;
+  }
+
+  .stat-value {
+    font-size: 1rem;
+  }
+
+  .stat-label {
+    font-size: 0.55rem;
+  }
+
+  .available-badge {
+    font-size: 0.62rem;
+    margin-top: 1px;
+  }
+
+  .progress-track {
+    height: 4px;
+  }
+
+  .status-summary-grid {
+    gap: 4px;
+  }
+
+  .summary-card {
+    padding: 4px 6px;
+  }
+
+  .summary-label {
+    font-size: 0.55rem;
+  }
+
+  .summary-val {
+    font-size: 0.7rem;
+  }
+
+  .tech-toggle-btn {
+    padding: 5px 8px;
+    font-size: 0.65rem;
+  }
+
+  .tech-body {
+    padding: 5px;
+    gap: 4px;
+  }
+
+  .ff-state {
+    font-size: 0.92rem;
+  }
+
+  .camera-controls {
+    gap: 4px;
+    margin-top: 2px;
+  }
+
+  .cam-btn {
+    padding: 5px 2px;
+    font-size: 0.62rem;
+  }
+}
+
+/* ==========================================================================
+   MICRO-AJUSTES: 420px, 375px Y 320px
+   ========================================================================== */
+@media (max-width: 420px) {
+  #ui-overlay {
+    padding: 6px;
+    gap: 4px;
+  }
+
+  .header-brand h1 {
+    font-size: 0.8rem;
+  }
+
+  .action-btn {
+    padding: 4px 6px;
+  }
+
+  .btn-title {
+    font-size: 0.65rem;
+  }
+
+  .cam-btn {
+    font-size: 0.58rem;
+    padding: 4px 1px;
+  }
+}
+
+@media (max-width: 375px) {
+  .chips-info {
+    display: none;
+  }
+
+  .header-brand {
+    padding: 5px 8px;
+  }
+
+  .telemetry-panel {
+    padding: 6px 8px;
+  }
+
+  .stat-value {
+    font-size: 0.95rem;
+  }
+}
+
+@media (max-width: 320px) {
+  #ui-overlay {
+    padding: 4px;
+    gap: 3px;
+  }
+
+  .mobile-ui-toggle {
+    top: 4px;
+    right: 4px;
+    padding: 4px 6px;
+    font-size: 0.6rem;
+  }
+
+  .hud-header {
+    max-width: calc(100% - 68px);
+  }
+
+  .header-brand h1 {
+    font-size: 0.72rem;
+  }
+
+  .action-btn {
+    padding: 3px 5px;
+  }
+
+  .btn-title {
+    font-size: 0.6rem;
+  }
+
+  .cam-btn {
+    font-size: 0.52rem;
+    padding: 3px 0;
   }
 }

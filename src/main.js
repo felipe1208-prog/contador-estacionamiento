@@ -29,6 +29,11 @@ class ApplicationController {
   }
 
   cacheDOM() {
+    // Alternancia de interfaz en móvil
+    this.btnToggleUI = document.getElementById("btn-toggle-ui");
+    this.uiOverlay = document.getElementById("ui-overlay");
+    this.toggleUIText = document.getElementById("toggle-ui-text");
+
     // Botones de acción rápida
     this.btnQuickIn = document.getElementById("btn-quick-in");
     this.btnQuickOut = document.getElementById("btn-quick-out");
@@ -81,6 +86,16 @@ class ApplicationController {
   }
 
   bindEvents() {
+    // Alternancia de HUD en dispositivos móviles
+    if (this.btnToggleUI && this.uiOverlay) {
+      this.btnToggleUI.addEventListener("click", () => {
+        const isCollapsed = this.uiOverlay.classList.toggle("ui-collapsed");
+        if (this.toggleUIText) {
+          this.toggleUIText.textContent = isCollapsed ? "Mostrar" : "Ocultar";
+        }
+      });
+    }
+
     // ACCIÓN RÁPIDA 1: SUMAR CARRO (ENTRAR)
     this.btnQuickIn.addEventListener("click", () => {
       this.logic.setInputs(1, 0); // Ein=1, Eout=0
