@@ -1,6 +1,6 @@
 Aquí tienes el **`README.md`** completo y blindado. Incluye tanto el paso a paso exacto para quien clona el repositorio como la configuración explícita de `package.json` e instalación manual de librerías (`three` y `vite`) por si se inicia desde cero en cualquier máquina sin dependencias previas:
 
-# Simulador 3D y Gemelo Digital | Estacionamiento Sambilito
+# Simulador 3D | Estacionamiento Sambilito
 
 Simulador 3D interactivo desarrollado con **Three.js** y **Vite**, que modela un sistema de control de aforo para un estacionamiento de 7 plazas. El comportamiento de la simulación está gobernado por un **contador síncrono bidireccional de 3 bits** implementado con compuertas y biestables TTL estándar de la serie 74LS (74LS76, 74LS74, 74LS02 y 74LS47).
 
