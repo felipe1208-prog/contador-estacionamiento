@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Estacionamiento Sambilito | Simulador 3D</title>
+
+    <!-- Tipografía Google Sans (Pesos: 400 Regular, 500 Medium, 700 Bold) -->
+    <link rel="preconnect" href="https://fonts.cdnfonts.com" />
+    <link href="https://fonts.cdnfonts.com/css/google-sans" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css?family=Google+Sans:400,500,700&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="/style.css" />
+
+    <!-- Resolución universal de Three.js -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+          "three/examples/jsm/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <!-- Lienzo WebGL Three.js -->
+    <canvas id="webgl-canvas"></canvas>
+
+    <!-- Capa de Interfaz y Control -->
+    <div id="ui-overlay">
+      <!-- Encabezado -->
+      <header class="hud-header">
+        <div class="header-brand">
+          <span class="badge">CENTRO COMERCIAL</span>
+          <h1>Estacionamiento Sambilito</h1>
+          <p class="chips-info">
+            Control Automatizado de Capacidad (Máx. 7 Vehículos)
+          </p>
+        </div>
+        <div class="alarm-banner" id="alarm-banner" aria-live="polite">
+          <span class="alarm-led" id="alarm-led-indicator"></span>
+          <span class="alarm-text" id="alarm-text"
+            >ESTADO: PUESTOS DISPONIBLES</span
+          >
+        </div>
+      </header>
+
+      <!-- Panel de Control Principal -->
+      <section class="control-panel">
+        <div class="panel-section-title">ACCIONES PRINCIPALES</div>
+
+        <div class="quick-actions-grid">
+          <!-- Botón Sumar Carro con SVG -->
+          <button type="button" class="action-btn btn-add" id="btn-quick-in">
+            <span class="btn-icon">
+              <svg
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </span>
+            <div class="btn-text-group">
+              <span class="btn-title">Sumar Carro</span>
+              <span class="btn-sub">Entrada al estacionamiento</span>
+            </div>
+          </button>
+
+          <!-- Botón Restar Carro con SVG -->
+          <button
+            type="button"
+            class="action-btn btn-remove"
+            id="btn-quick-out"
+          >
+            <span class="btn-icon">
+              <svg
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </span>
+            <div class="btn-text-group">
+              <span class="btn-title">Restar Carro</span>
+              <span class="btn-sub">Salida del estacionamiento</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Controles Manuales Secundarios -->
+        <div class="manual-section">
+          <div class="manual-header" id="manual-toggle-btn">
+            <span>Simular Sensores Manuales</span>
+            <svg
+              class="toggle-icon-svg"
+              viewBox="0 0 24 24"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+
+          <div class="manual-body" id="manual-controls-body">
+            <div class="manual-row">
+              <span class="manual-label">Sensor Entrada (E<sub>IN</sub>)</span>
+              <button
+                type="button"
+                class="toggle-btn"
+                id="btn-ein"
+                data-active="false"
+              >
+                <span class="btn-led"></span>
+                <span class="btn-val">0</span>
+              </button>
+            </div>
+
+            <div class="manual-row">
+              <span class="manual-label">Sensor Salida (E<sub>OUT</sub>)</span>
+              <button
+                type="button"
+                class="toggle-btn"
+                id="btn-eout"
+                data-active="false"
+              >
+                <span class="btn-led"></span>
+                <span class="btn-val">0</span>
+              </button>
+            </div>
+
+            <div class="manual-row">
+              <span class="manual-label">Pulsar Reloj</span>
+              <button type="button" class="pulse-btn" id="btn-clk">
+                PULSO
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel Informativo de Ocupación -->
+      <aside class="telemetry-panel">
+        <div class="panel-section-title">OCUPACIÓN EN TIEMPO REAL</div>
+
+        <!-- Pantalla Display 7 Segmentos -->
+        <div class="display-container">
+          <div class="seven-segment-wrapper">
+            <div class="seven-segment" id="seven-segment">
+              <div class="seg seg-a" id="seg-a"></div>
+              <div class="seg seg-b" id="seg-b"></div>
+              <div class="seg seg-c" id="seg-c"></div>
+              <div class="seg seg-d" id="seg-d"></div>
+              <div class="seg seg-e" id="seg-e"></div>
+              <div class="seg seg-f" id="seg-f"></div>
+              <div class="seg seg-g" id="seg-g"></div>
+            </div>
+          </div>
+
+          <div class="capacity-stats">
+            <div class="stat-item">
+              <span class="stat-label">CARROS ADENTRO</span>
+              <span class="stat-value" id="occupancy-counter">0 / 7</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="occupancy-progress"></div>
+            </div>
+            <span class="available-badge" id="available-counter"
+              >7 puestos libres</span
+            >
+          </div>
+        </div>
+
+        <!-- Estado de Accesos -->
+        <div class="status-summary-grid">
+          <div class="summary-card">
+            <span class="summary-label">Barrera Entrada</span>
+            <span class="summary-val" id="gate-in-status">Cerrada</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-label">Barrera Salida</span>
+            <span class="summary-val" id="gate-out-status">Cerrada</span>
+          </div>
+        </div>
+
+        <!-- Desplegable Técnico para Defensa -->
+        <div class="tech-section">
+          <button type="button" class="tech-toggle-btn" id="tech-toggle-btn">
+            <span>Lógica Interna (Flip-Flops)</span>
+            <svg
+              class="tech-arrow-svg"
+              viewBox="0 0 24 24"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+
+          <div class="tech-body" id="tech-body">
+            <div class="flipflops-grid">
+              <div class="ff-card">
+                <span class="ff-type">74LS76 (JK)</span>
+                <span class="ff-bit">Q<sub>2</sub></span>
+                <span class="ff-state" id="ff-q2">0</span>
+                <span class="ff-terms" id="terms-q2">J:0 K:0</span>
+              </div>
+              <div class="ff-card">
+                <span class="ff-type">74LS74 (D)</span>
+                <span class="ff-bit">Q<sub>1</sub></span>
+                <span class="ff-state" id="ff-q1">0</span>
+                <span class="ff-terms" id="terms-q1">D:0</span>
+              </div>
+              <div class="ff-card">
+                <span class="ff-type">74LS76 (T)</span>
+                <span class="ff-bit">Q<sub>0</sub></span>
+                <span class="ff-state" id="ff-q0">0</span>
+                <span class="ff-terms" id="terms-q0">T:0</span>
+              </div>
+            </div>
+
+            <div class="latch-card">
+              <div class="latch-header">
+                <span class="latch-title">LATCH SR (ALARMA)</span>
+                <span class="latch-status" id="latch-status">Q = 0</span>
+              </div>
+              <div class="latch-signals">
+                <span class="latch-term" id="latch-s">S = 0</span>
+                <span class="latch-term" id="latch-r">R = 0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Vistas de Cámara -->
+        <div class="camera-controls">
+          <button type="button" class="cam-btn active" data-view="isometric">
+            General
+          </button>
+          <button type="button" class="cam-btn" data-view="gate-in">
+            Entrada
+          </button>
+          <button type="button" class="cam-btn" data-view="gate-out">
+            Salida
+          </button>
+          <button type="button" class="cam-btn" data-view="top">Cenital</button>
+        </div>
+      </aside>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
