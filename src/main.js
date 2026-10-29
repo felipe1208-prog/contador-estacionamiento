@@ -14,10 +14,10 @@ class ApplicationController {
     this.scene = new ParkingScene(this.canvas);
     this.vehicles = new VehicleManager(this.scene.scene, this.scene);
 
-    this.prevCount = 0;
     this.clock = new THREE.Clock();
 
     this.cacheDOM();
+    this.bindGateSensors();
     this.bindEvents();
     this.updateHUD();
 
@@ -85,6 +85,44 @@ class ApplicationController {
     this.camButtons = document.querySelectorAll(".cam-btn");
   }
 
+  /**
+   * Sincroniza la apertura/cierre de barreras y actualiza el conteo del HUD y Tótem 3D
+   * en el instante exacto en que el vehículo cruza la barrera de entrada o de salida.
+   */
+  bindGateSensors() {
+    this.vehicles.onEntranceGateChange = (isOpen) => {
+      this.audio.playServoSound();
+      this.uiGateIn.textContent = isOpen ? "Abierta" : "Cerrada";
+      this.uiGateIn.style.color = isOpen ? "#22c55e" : "";
+    };
+
+    this.vehicles.onExitGateChange = (isOpen) => {
+      this.audio.playServoSound();
+      this.uiGateOut.textContent = isOpen ? "Abierta" : "Cerrada";
+      this.uiGateOut.style.color = isOpen ? "#22c55e" : "";
+    };
+
+    // Cuando el auto cruza físicamente la barrera de entrada -> Suma (+1) en HUD y Tótem
+    this.vehicles.onCarCrossedEntrance = () => {
+      this.logic.setInputs(1, 0);
+      this.audio.playRelayClick();
+      const result = this.logic.triggerClockEdge();
+      this.syncAlarmAndTotem(result);
+      this.syncManualSwitchState();
+      this.updateHUD();
+    };
+
+    // Cuando el auto cruza físicamente la barrera de salida -> Resta (-1) en HUD y Tótem
+    this.vehicles.onCarCrossedExit = () => {
+      this.logic.setInputs(0, 1);
+      this.audio.playRelayClick();
+      const result = this.logic.triggerClockEdge();
+      this.syncAlarmAndTotem(result);
+      this.syncManualSwitchState();
+      this.updateHUD();
+    };
+  }
+
   bindEvents() {
     // Alternancia de HUD en dispositivos móviles
     if (this.btnToggleUI && this.uiOverlay) {
@@ -98,22 +136,12 @@ class ApplicationController {
 
     // ACCIÓN RÁPIDA 1: SUMAR CARRO (ENTRAR)
     this.btnQuickIn.addEventListener("click", () => {
-      this.logic.setInputs(1, 0); // Ein=1, Eout=0
-      this.audio.playRelayClick();
-      const result = this.logic.triggerClockEdge();
-      this.handleSequentialStep(result);
-      this.syncManualSwitchState();
-      this.updateHUD();
+      this.triggerVehicleEntry();
     });
 
     // ACCIÓN RÁPIDA 2: RESTAR CARRO (SALIR)
     this.btnQuickOut.addEventListener("click", () => {
-      this.logic.setInputs(0, 1); // Ein=0, Eout=1
-      this.audio.playRelayClick();
-      const result = this.logic.triggerClockEdge();
-      this.handleSequentialStep(result);
-      this.syncManualSwitchState();
-      this.updateHUD();
+      this.triggerVehicleExit();
     });
 
     // Desplegables de la interfaz
@@ -143,10 +171,27 @@ class ApplicationController {
     });
 
     this.btnClk.addEventListener("click", () => {
-      this.audio.playRelayClick();
-      const result = this.logic.triggerClockEdge();
-      this.handleSequentialStep(result);
-      this.updateHUD();
+      const ein = this.logic.Ein === 1;
+      const eout = this.logic.Eout === 1;
+
+      if (ein && !eout) {
+        this.triggerVehicleEntry();
+      } else if (!ein && eout) {
+        this.triggerVehicleExit();
+      } else if (ein && eout) {
+        this.audio.playRelayClick();
+        if (this.vehicles.hasCarToExit()) {
+          const vacatedBay = this.vehicles.removeParkedCar();
+          this.vehicles.parkNewCar({}, vacatedBay);
+        } else {
+          this.vehicles.passThroughCar();
+        }
+      } else {
+        this.audio.playRelayClick();
+        const result = this.logic.triggerClockEdge();
+        this.syncAlarmAndTotem(result);
+        this.updateHUD();
+      }
     });
 
     this.camButtons.forEach((btn) => {
@@ -157,6 +202,51 @@ class ApplicationController {
         this.scene.setCameraView(view);
       });
     });
+  }
+
+  triggerVehicleEntry() {
+    this.logic.setInputs(1, 0);
+    this.syncManualSwitchState();
+
+    if (this.vehicles.canAcceptNewCar()) {
+      this.audio.playRelayClick();
+      this.vehicles.parkNewCar();
+      this.updateHUD();
+    } else {
+      // Estacionamiento lleno (7 puestos ocupados): dispara alarma de sobrecupo (S = 1)
+      this.audio.playRelayClick();
+      const result = this.logic.triggerClockEdge();
+      if (this.logic.AlarmLatch === 0) {
+        this.logic.AlarmLatch = 1;
+        this.logic.terms.S = 1;
+        result.alarm = 1;
+      }
+      this.syncAlarmAndTotem(result);
+      this.updateHUD();
+    }
+  }
+
+  triggerVehicleExit() {
+    this.logic.setInputs(0, 1);
+    this.syncManualSwitchState();
+
+    if (this.vehicles.hasCarToExit()) {
+      this.audio.playRelayClick();
+      this.vehicles.removeParkedCar();
+      this.updateHUD();
+    } else {
+      this.audio.playRelayClick();
+      const result = this.logic.triggerClockEdge();
+      this.syncAlarmAndTotem(result);
+      this.updateHUD();
+    }
+  }
+
+  syncAlarmAndTotem(result) {
+    const isAlarm = Boolean(result.alarm);
+    this.scene.setAlarmBeacon(isAlarm);
+    this.audio.setAlarm(isAlarm);
+    this.scene.updateDisplayTotem(result.count, isAlarm);
   }
 
   syncManualSwitchState() {
@@ -176,110 +266,6 @@ class ApplicationController {
     const eout = this.btnEout.getAttribute("data-active") === "true";
     this.logic.setInputs(ein, eout);
     this.updateHUD();
-  }
-
-  handleSequentialStep(result) {
-    const newCount = result.count;
-    const diff = newCount - this.prevCount;
-    const bothSensorsActive = this.logic.Ein === 1 && this.logic.Eout === 1;
-
-    // CASO 1: Ambos sensores en 1 (Ein = 1, Eout = 1) -> Entra uno (+1) y sale otro (-1) simultáneamente
-    if (bothSensorsActive && diff === 0) {
-      if (this.prevCount > 0) {
-        // Primero liberamos el puesto del carro que sale
-        const vacatedBay = this.vehicles.removeParkedCar({
-          onApproachGate: () => {
-            this.audio.playServoSound();
-            this.scene.setExitBarrier(true);
-            this.uiGateOut.textContent = "Abierta";
-          },
-          onPassedGate: () => {
-            this.scene.setExitBarrier(false);
-            this.uiGateOut.textContent = "Cerrada";
-          },
-          onComplete: () => {},
-        });
-
-        // Al mismo tiempo ingresa el carro nuevo (prefiriendo otro puesto libre si lo hay)
-        this.vehicles.parkNewCar(
-          {
-            onApproachGate: () => {
-              this.audio.playServoSound();
-              this.scene.setEntranceBarrier(true);
-              this.uiGateIn.textContent = "Abierta";
-            },
-            onPassedGate: () => {
-              this.scene.setEntranceBarrier(false);
-              this.uiGateIn.textContent = "Cerrada";
-            },
-            onComplete: () => {},
-          },
-          vacatedBay,
-        );
-      } else {
-        // Si estaba en 0/7, un auto entra por la garita izquierda y sale directo por la derecha
-        this.vehicles.passThroughCar({
-          onApproachInGate: () => {
-            this.audio.playServoSound();
-            this.scene.setEntranceBarrier(true);
-            this.uiGateIn.textContent = "Abierta";
-          },
-          onPassedInGate: () => {
-            this.scene.setEntranceBarrier(false);
-            this.uiGateIn.textContent = "Cerrada";
-          },
-          onApproachOutGate: () => {
-            this.audio.playServoSound();
-            this.scene.setExitBarrier(true);
-            this.uiGateOut.textContent = "Abierta";
-          },
-          onPassedOutGate: () => {
-            this.scene.setExitBarrier(false);
-            this.uiGateOut.textContent = "Cerrada";
-          },
-        });
-      }
-    }
-    // CASO 2: Incrementa (+1) -> Entra auto al primer puesto libre disponible
-    else if (diff > 0) {
-      this.vehicles.parkNewCar({
-        onApproachGate: () => {
-          this.audio.playServoSound();
-          this.scene.setEntranceBarrier(true);
-          this.uiGateIn.textContent = "Abierta";
-        },
-        onPassedGate: () => {
-          this.scene.setEntranceBarrier(false);
-          this.uiGateIn.textContent = "Cerrada";
-        },
-        onComplete: () => {},
-      });
-    }
-    // CASO 3: Decrementa (-1) -> Sale un auto que YA esté estacionado
-    else if (diff < 0) {
-      this.vehicles.removeParkedCar({
-        onApproachGate: () => {
-          this.audio.playServoSound();
-          this.scene.setExitBarrier(true);
-          this.uiGateOut.textContent = "Abierta";
-        },
-        onPassedGate: () => {
-          this.scene.setExitBarrier(false);
-          this.uiGateOut.textContent = "Cerrada";
-        },
-        onComplete: () => {},
-      });
-    }
-
-    // Alarma por sobrecupo
-    const isAlarm = Boolean(result.alarm);
-    this.scene.setAlarmBeacon(isAlarm);
-    this.audio.setAlarm(isAlarm);
-
-    // Actualizar el Tótem Electrónico 3D en la escena
-    this.scene.updateDisplayTotem(newCount, isAlarm);
-
-    this.prevCount = newCount;
   }
 
   updateHUD() {

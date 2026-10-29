@@ -17,6 +17,14 @@ export class VehicleManager {
     this.ambientTraffic = [];
     this.colorCursor = 0;
 
+    // Estado en tiempo real de los sensores físicos de barrera y conteo
+    this.entranceSensorActive = false;
+    this.exitSensorActive = false;
+    this.onEntranceGateChange = null;
+    this.onExitGateChange = null;
+    this.onCarCrossedEntrance = null;
+    this.onCarCrossedExit = null;
+
     this.paintColors = [
       0x2563eb, // Azul Cobalto Metálico
       0xdc2626, // Rojo Carmesí Deportivo
@@ -448,8 +456,24 @@ export class VehicleManager {
   }
 
   /**
+   * Verifica si existe al menos un puesto disponible para recibir un vehículo nuevo
+   */
+  canAcceptNewCar() {
+    return this.bayStates.some((st) => st === "FREE");
+  }
+
+  /**
+   * Verifica si hay algún vehículo estacionado o en tránsito de entrada que pueda salir
+   */
+  hasCarToExit() {
+    return (
+      this.parkedOrder.length > 0 ||
+      this.activeTransitions.some((t) => t.type === "ENTRY")
+    );
+  }
+
+  /**
    * Busca automáticamente el primer puesto libre (0..6).
-   * Si avoidBayIndex >= 0, prefiere otro puesto libre distinto al que se está desocupando.
    */
   parkNewCar(hooks = {}, avoidBayIndex = -1) {
     let freeBayIndex = this.bayStates.findIndex(
@@ -458,8 +482,9 @@ export class VehicleManager {
     if (freeBayIndex === -1) {
       freeBayIndex = this.bayStates.findIndex((st) => st === "FREE");
     }
-    if (freeBayIndex === -1) return;
+    if (freeBayIndex === -1) return false;
     this.parkCarInBay(freeBayIndex, hooks);
+    return true;
   }
 
   parkCarInBay(bayIndex, hooks = {}) {
@@ -486,10 +511,11 @@ export class VehicleManager {
       [
         new THREE.Vector3(-46, 0, avenueZ),
         new THREE.Vector3(laneInX - 4.2, 0, avenueZ),
-        new THREE.Vector3(laneInX - 0.6, 0, avenueZ - 1.4),
-        new THREE.Vector3(laneInX, 0, tollZ + 3.5),
-        new THREE.Vector3(laneInX, 0, tollZ - 3.5),
-        new THREE.Vector3(laneInX + 0.5, 0, drivewayZ + 2.2),
+        new THREE.Vector3(laneInX - 0.3, 0, avenueZ - 1.8),
+        new THREE.Vector3(laneInX, 0, tollZ + 4.2),
+        new THREE.Vector3(laneInX, 0, tollZ),
+        new THREE.Vector3(laneInX, 0, tollZ - 4.2),
+        new THREE.Vector3(laneInX + 0.5, 0, drivewayZ + 2.0),
         new THREE.Vector3(laneInX + 4.2, 0, drivewayZ),
         new THREE.Vector3(targetX - 2.6, 0, drivewayZ),
         new THREE.Vector3(targetX, 0, drivewayZ - 2.2),
@@ -508,16 +534,14 @@ export class VehicleManager {
       car,
       bayIndex,
       type: "ENTRY",
+      hasCrossedEntrance: false,
+      hasCrossedExit: false,
       phases: [
         {
           curve: entryCurve,
           length: entryCurve.getLength(),
           reverse: false,
           speed: 13.0,
-          events: [
-            { u: 0.16, fired: false, cb: () => hooks.onApproachGate?.() },
-            { u: 0.44, fired: false, cb: () => hooks.onPassedGate?.() },
-          ],
         },
       ],
       phaseIdx: 0,
@@ -541,7 +565,7 @@ export class VehicleManager {
   }
 
   /**
-   * Recorrido continuo de entrada y salida inmediata cuando el estacionamiento está en 0/7
+   * Recorrido continuo de entrada y salida cuando el estacionamiento está en 0/7
    * y se dispara un pulso con Ein = 1 y Eout = 1.
    */
   passThroughCar(hooks = {}) {
@@ -559,14 +583,16 @@ export class VehicleManager {
       [
         new THREE.Vector3(-46, 0, avenueZ),
         new THREE.Vector3(laneInX - 4.2, 0, avenueZ),
-        new THREE.Vector3(laneInX - 0.6, 0, avenueZ - 1.4),
-        new THREE.Vector3(laneInX, 0, tollZ + 3.5),
-        new THREE.Vector3(laneInX, 0, tollZ - 3.5),
+        new THREE.Vector3(laneInX - 0.3, 0, avenueZ - 1.8),
+        new THREE.Vector3(laneInX, 0, tollZ + 4.2),
+        new THREE.Vector3(laneInX, 0, tollZ),
+        new THREE.Vector3(laneInX, 0, tollZ - 4.2),
         new THREE.Vector3(laneInX + 1.2, 0, drivewayZ + 1.8),
         new THREE.Vector3(0, 0, drivewayZ),
         new THREE.Vector3(laneOutX - 1.2, 0, drivewayZ + 1.8),
-        new THREE.Vector3(laneOutX, 0, tollZ - 3.5),
-        new THREE.Vector3(laneOutX, 0, tollZ + 3.5),
+        new THREE.Vector3(laneOutX, 0, tollZ - 4.2),
+        new THREE.Vector3(laneOutX, 0, tollZ),
+        new THREE.Vector3(laneOutX, 0, tollZ + 4.2),
         new THREE.Vector3(laneOutX + 0.6, 0, avenueZ - 1.4),
         new THREE.Vector3(laneOutX + 4.5, 0, avenueZ),
         new THREE.Vector3(52, 0, avenueZ),
@@ -584,18 +610,14 @@ export class VehicleManager {
       car,
       bayIndex: -1,
       type: "PASSTHROUGH",
+      hasCrossedEntrance: false,
+      hasCrossedExit: false,
       phases: [
         {
           curve: passCurve,
           length: passCurve.getLength(),
           reverse: false,
-          speed: 14.0,
-          events: [
-            { u: 0.14, fired: false, cb: () => hooks.onApproachInGate?.() },
-            { u: 0.32, fired: false, cb: () => hooks.onPassedInGate?.() },
-            { u: 0.64, fired: false, cb: () => hooks.onApproachOutGate?.() },
-            { u: 0.82, fired: false, cb: () => hooks.onPassedOutGate?.() },
-          ],
+          speed: 13.5,
         },
       ],
       phaseIdx: 0,
@@ -627,42 +649,66 @@ export class VehicleManager {
       const trans = this.activeTransitions[enteringIdx];
       const bayIndex = trans.bayIndex;
       const car = trans.car;
-
-      for (const ev of trans.phases[0].events) {
-        if (!ev.fired) ev.cb();
-      }
+      const alreadyCrossedIn = trans.hasCrossedEntrance;
 
       this.activeTransitions.splice(enteringIdx, 1);
       this.bayStates[bayIndex] = "FREE";
       this.bayCars[bayIndex] = null;
       this.parkingScene.setBayOccupied(bayIndex, false);
 
-      this.redirectEnteringCarToExit(car, hooks);
+      this.redirectEnteringCarToExit(car, alreadyCrossedIn, hooks);
       return bayIndex;
     }
 
     return -1;
   }
 
-  redirectEnteringCarToExit(car, hooks = {}) {
+  redirectEnteringCarToExit(car, alreadyCrossedIn, hooks = {}) {
+    const laneInX = this.parkingScene.laneInX;
     const laneOutX = this.parkingScene.laneOutX;
     const drivewayZ = this.parkingScene.drivewayZ;
     const avenueZ = this.parkingScene.avenueZ;
     const tollZ = this.parkingScene.tollZ;
     const curPos = car.position.clone();
 
-    const redirectCurve = new THREE.CatmullRomCurve3(
-      [
-        curPos,
-        new THREE.Vector3(Math.max(curPos.x + 4.0, -10.0), 0, drivewayZ),
-        new THREE.Vector3(laneOutX - 3.6, 0, drivewayZ),
-        new THREE.Vector3(laneOutX - 0.5, 0, drivewayZ + 2.2),
-        new THREE.Vector3(laneOutX, 0, tollZ - 3.2),
-        new THREE.Vector3(laneOutX, 0, tollZ + 3.6),
+    let points;
+    if (!alreadyCrossedIn) {
+      points = [curPos];
+      if (curPos.x < laneInX - 1.5) {
+        points.push(new THREE.Vector3(laneInX - 4.2, 0, avenueZ));
+        points.push(new THREE.Vector3(laneInX - 0.3, 0, avenueZ - 1.8));
+      }
+      points.push(
+        new THREE.Vector3(laneInX, 0, tollZ + 3.5),
+        new THREE.Vector3(laneInX, 0, tollZ),
+        new THREE.Vector3(laneInX, 0, tollZ - 4.2),
+        new THREE.Vector3(laneInX + 1.2, 0, drivewayZ + 1.8),
+        new THREE.Vector3(0, 0, drivewayZ),
+        new THREE.Vector3(laneOutX - 1.2, 0, drivewayZ + 1.8),
+        new THREE.Vector3(laneOutX, 0, tollZ - 4.2),
+        new THREE.Vector3(laneOutX, 0, tollZ),
+        new THREE.Vector3(laneOutX, 0, tollZ + 4.2),
         new THREE.Vector3(laneOutX + 0.6, 0, avenueZ - 1.4),
         new THREE.Vector3(laneOutX + 4.5, 0, avenueZ),
         new THREE.Vector3(52, 0, avenueZ),
-      ],
+      );
+    } else {
+      points = [
+        curPos,
+        new THREE.Vector3(Math.max(curPos.x + 4.0, -10.0), 0, drivewayZ),
+        new THREE.Vector3(laneOutX - 4.0, 0, drivewayZ),
+        new THREE.Vector3(laneOutX - 0.4, 0, drivewayZ + 1.8),
+        new THREE.Vector3(laneOutX, 0, tollZ - 4.2),
+        new THREE.Vector3(laneOutX, 0, tollZ),
+        new THREE.Vector3(laneOutX, 0, tollZ + 4.2),
+        new THREE.Vector3(laneOutX + 0.6, 0, avenueZ - 1.4),
+        new THREE.Vector3(laneOutX + 4.5, 0, avenueZ),
+        new THREE.Vector3(52, 0, avenueZ),
+      ];
+    }
+
+    const redirectCurve = new THREE.CatmullRomCurve3(
+      points,
       false,
       "catmullrom",
       0.35,
@@ -671,17 +717,15 @@ export class VehicleManager {
     this.activeTransitions.push({
       car,
       bayIndex: -1,
-      type: "EXIT",
+      type: alreadyCrossedIn ? "EXIT" : "PASSTHROUGH",
+      hasCrossedEntrance: alreadyCrossedIn,
+      hasCrossedExit: false,
       phases: [
         {
           curve: redirectCurve,
           length: redirectCurve.getLength(),
           reverse: false,
-          speed: 13.8,
-          events: [
-            { u: 0.34, fired: false, cb: () => hooks.onApproachGate?.() },
-            { u: 0.62, fired: false, cb: () => hooks.onPassedGate?.() },
-          ],
+          speed: 13.5,
         },
       ],
       phaseIdx: 0,
@@ -707,8 +751,6 @@ export class VehicleManager {
       this.parkedOrder.splice(orderPos, 1);
     }
 
-    this.parkingScene.setBayOccupied(bayIndex, false);
-
     const startX =
       this.parkingScene.bayStartX + bayIndex * this.parkingScene.baySpacing;
     const laneOutX = this.parkingScene.laneOutX;
@@ -731,11 +773,11 @@ export class VehicleManager {
     const forwardCurve = new THREE.CatmullRomCurve3(
       [
         new THREE.Vector3(startX - 2.4, 0, drivewayZ),
-        new THREE.Vector3(startX + 2.5, 0, drivewayZ),
-        new THREE.Vector3(laneOutX - 3.6, 0, drivewayZ),
-        new THREE.Vector3(laneOutX - 0.5, 0, drivewayZ + 2.2),
-        new THREE.Vector3(laneOutX, 0, tollZ - 3.2),
-        new THREE.Vector3(laneOutX, 0, tollZ + 3.6),
+        new THREE.Vector3(Math.min(startX + 2.0, laneOutX - 4.2), 0, drivewayZ),
+        new THREE.Vector3(laneOutX - 0.4, 0, drivewayZ + 1.8),
+        new THREE.Vector3(laneOutX, 0, tollZ - 4.2),
+        new THREE.Vector3(laneOutX, 0, tollZ),
+        new THREE.Vector3(laneOutX, 0, tollZ + 4.2),
         new THREE.Vector3(laneOutX + 0.6, 0, avenueZ - 1.4),
         new THREE.Vector3(laneOutX + 4.5, 0, avenueZ),
         new THREE.Vector3(52, 0, avenueZ),
@@ -749,23 +791,23 @@ export class VehicleManager {
       car,
       bayIndex,
       type: "EXIT",
+      hasCrossedEntrance: true,
+      hasCrossedExit: false,
       phases: [
         {
           curve: reverseCurve,
           length: reverseCurve.getLength(),
           reverse: true,
           speed: 7.5,
-          events: [],
+          onPhaseEnd: () => {
+            this.parkingScene.setBayOccupied(bayIndex, false);
+          },
         },
         {
           curve: forwardCurve,
           length: forwardCurve.getLength(),
           reverse: false,
-          speed: 13.8,
-          events: [
-            { u: 0.34, fired: false, cb: () => hooks.onApproachGate?.() },
-            { u: 0.62, fired: false, cb: () => hooks.onPassedGate?.() },
-          ],
+          speed: 13.5,
         },
       ],
       phaseIdx: 0,
@@ -779,11 +821,95 @@ export class VehicleManager {
     });
   }
 
+  /**
+   * Evalúa los sensores físicos de las barreras (tollZ = 9.5) para abrir/cerrar a tiempo
+   * y disparar el conteo exactamente cuando el vehículo cruza la barrera.
+   */
+  updateBarrierSensors() {
+    const laneInX = this.parkingScene.laneInX;
+    const laneOutX = this.parkingScene.laneOutX;
+    const tollZ = this.parkingScene.tollZ;
+
+    let carInEntranceZone = false;
+    let carInExitZone = false;
+
+    for (let i = 0; i < this.activeTransitions.length; i++) {
+      const trans = this.activeTransitions[i];
+      const pos = trans.car.position;
+      const phase = trans.phases[trans.phaseIdx];
+
+      if (phase.reverse) continue;
+
+      // 1. Cruce exacto de la Barrera de Salida (Z >= 9.5 en carril derecho) -> Resta (-1)
+      if (
+        (trans.type === "EXIT" || trans.type === "PASSTHROUGH") &&
+        !trans.hasCrossedExit &&
+        Math.abs(pos.x - laneOutX) < 3.2 &&
+        pos.z >= tollZ
+      ) {
+        trans.hasCrossedExit = true;
+        this.onCarCrossedExit?.(trans);
+      }
+
+      // 2. Cruce exacto de la Barrera de Entrada (Z <= 9.5 en carril izquierdo) -> Suma (+1)
+      if (
+        (trans.type === "ENTRY" || trans.type === "PASSTHROUGH") &&
+        !trans.hasCrossedEntrance &&
+        Math.abs(pos.x - laneInX) < 3.2 &&
+        pos.z <= tollZ
+      ) {
+        trans.hasCrossedEntrance = true;
+        this.onCarCrossedEntrance?.(trans);
+      }
+
+      // 3. Zona de apertura física de la Barrera de Entrada
+      if (
+        (trans.type === "ENTRY" || trans.type === "PASSTHROUGH") &&
+        Math.abs(pos.x - laneInX) < 3.2 &&
+        pos.z <= 15.8 &&
+        pos.z >= 5.8
+      ) {
+        carInEntranceZone = true;
+      }
+
+      // 4. Zona de apertura física de la Barrera de Salida
+      if (
+        (trans.type === "EXIT" || trans.type === "PASSTHROUGH") &&
+        Math.abs(pos.x - laneOutX) < 3.2 &&
+        pos.z >= 3.2 &&
+        pos.z <= 13.2
+      ) {
+        carInExitZone = true;
+      }
+    }
+
+    if (carInEntranceZone !== this.entranceSensorActive) {
+      this.entranceSensorActive = carInEntranceZone;
+      this.parkingScene.setEntranceBarrier(carInEntranceZone);
+      this.onEntranceGateChange?.(carInEntranceZone);
+    }
+
+    if (carInExitZone !== this.exitSensorActive) {
+      this.exitSensorActive = carInExitZone;
+      this.parkingScene.setExitBarrier(carInExitZone);
+      this.onExitGateChange?.(carInExitZone);
+    }
+  }
+
   update(delta) {
     // 1. Actualizar el tráfico urbano aleatorio de la avenida
     this.updateAmbientTraffic(delta);
 
     // 2. Actualizar los vehículos que entran o salen del estacionamiento
+    const laneInX = this.parkingScene.laneInX;
+    const laneOutX = this.parkingScene.laneOutX;
+    const inGateAngle = Math.abs(
+      this.parkingScene.entranceGate?.currentAngle || 0,
+    );
+    const outGateAngle = Math.abs(
+      this.parkingScene.exitGate?.currentAngle || 0,
+    );
+
     for (let i = this.activeTransitions.length - 1; i >= 0; i--) {
       const trans = this.activeTransitions[i];
       const phase = trans.phases[trans.phaseIdx];
@@ -793,19 +919,53 @@ export class VehicleManager {
       const edgeFactor = Math.sin(
         Math.min(Math.max(trans.u, 0.04), 0.96) * Math.PI,
       );
-      const speedMultiplier = 0.55 + 0.65 * edgeFactor;
-      const currentSpeed = phase.speed * speedMultiplier;
+      let speedMultiplier = 0.55 + 0.65 * edgeFactor;
 
-      trans.u += (currentSpeed * delta) / Math.max(phase.length, 0.1);
-
-      for (const ev of phase.events) {
-        if (!ev.fired && trans.u >= ev.u) {
-          ev.fired = true;
-          ev.cb();
+      // Enclavamiento físico (Interlock): Espera frente a la barrera si el brazo aún está subiendo
+      let waitingForBarrier = false;
+      if (!phase.reverse) {
+        if (
+          Math.abs(car.position.x - laneInX) < 2.5 &&
+          car.position.z > 11.4 &&
+          car.position.z < 13.4 &&
+          inGateAngle < 1.15
+        ) {
+          waitingForBarrier = true;
+        }
+        if (
+          Math.abs(car.position.x - laneOutX) < 2.5 &&
+          car.position.z > 5.6 &&
+          car.position.z < 7.6 &&
+          outGateAngle < 1.15
+        ) {
+          waitingForBarrier = true;
         }
       }
 
+      // Control de distancia en cola entre vehículos del mismo flujo
+      let queuedBehindCar = false;
+      for (let j = 0; j < i; j++) {
+        const ahead = this.activeTransitions[j];
+        if (
+          ahead.type === trans.type &&
+          ahead.car.position.distanceTo(car.position) < 6.0
+        ) {
+          queuedBehindCar = true;
+          break;
+        }
+      }
+
+      if (waitingForBarrier) {
+        speedMultiplier = 0.04;
+      } else if (queuedBehindCar) {
+        speedMultiplier = 0.18;
+      }
+
+      const currentSpeed = phase.speed * speedMultiplier;
+      trans.u += (currentSpeed * delta) / Math.max(phase.length, 0.1);
+
       if (trans.u >= 1.0) {
+        phase.onPhaseEnd?.();
         trans.u = 0;
         trans.phaseIdx++;
 
@@ -859,7 +1019,7 @@ export class VehicleManager {
       }
 
       const targetRoll = THREE.MathUtils.clamp(turnRate * 0.028, -0.06, 0.06);
-      const isBraking = trans.u > 0.8;
+      const isBraking = trans.u > 0.8 || waitingForBarrier || queuedBehindCar;
       const targetPitch = isBraking
         ? phase.reverse
           ? -0.022
@@ -882,5 +1042,8 @@ export class VehicleManager {
       ud.brakeMat.emissiveIntensity = isBraking ? 1.4 : 0.35;
       ud.revMat.emissiveIntensity = phase.reverse ? 1.2 : 0.0;
     }
+
+    // 3. Evaluar sensores físicos de ambas barreras y disparar conteo al cruzar
+    this.updateBarrierSensors();
   }
 }
