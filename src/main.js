@@ -181,12 +181,68 @@ class ApplicationController {
   handleSequentialStep(result) {
     const newCount = result.count;
     const diff = newCount - this.prevCount;
+    const bothSensorsActive = this.logic.Ein === 1 && this.logic.Eout === 1;
 
-    // Si incrementa (+1): Entra auto
-    if (diff > 0) {
-      const targetBay = newCount - 1;
-      this.uiGateIn.textContent = "Abierta";
-      this.vehicles.parkCarInBay(targetBay, {
+    // CASO 1: Ambos sensores en 1 (Ein = 1, Eout = 1) -> Entra uno (+1) y sale otro (-1) simultáneamente
+    if (bothSensorsActive && diff === 0) {
+      if (this.prevCount > 0) {
+        // Primero liberamos el puesto del carro que sale
+        const vacatedBay = this.vehicles.removeParkedCar({
+          onApproachGate: () => {
+            this.audio.playServoSound();
+            this.scene.setExitBarrier(true);
+            this.uiGateOut.textContent = "Abierta";
+          },
+          onPassedGate: () => {
+            this.scene.setExitBarrier(false);
+            this.uiGateOut.textContent = "Cerrada";
+          },
+          onComplete: () => {},
+        });
+
+        // Al mismo tiempo ingresa el carro nuevo (prefiriendo otro puesto libre si lo hay)
+        this.vehicles.parkNewCar(
+          {
+            onApproachGate: () => {
+              this.audio.playServoSound();
+              this.scene.setEntranceBarrier(true);
+              this.uiGateIn.textContent = "Abierta";
+            },
+            onPassedGate: () => {
+              this.scene.setEntranceBarrier(false);
+              this.uiGateIn.textContent = "Cerrada";
+            },
+            onComplete: () => {},
+          },
+          vacatedBay,
+        );
+      } else {
+        // Si estaba en 0/7, un auto entra por la garita izquierda y sale directo por la derecha
+        this.vehicles.passThroughCar({
+          onApproachInGate: () => {
+            this.audio.playServoSound();
+            this.scene.setEntranceBarrier(true);
+            this.uiGateIn.textContent = "Abierta";
+          },
+          onPassedInGate: () => {
+            this.scene.setEntranceBarrier(false);
+            this.uiGateIn.textContent = "Cerrada";
+          },
+          onApproachOutGate: () => {
+            this.audio.playServoSound();
+            this.scene.setExitBarrier(true);
+            this.uiGateOut.textContent = "Abierta";
+          },
+          onPassedOutGate: () => {
+            this.scene.setExitBarrier(false);
+            this.uiGateOut.textContent = "Cerrada";
+          },
+        });
+      }
+    }
+    // CASO 2: Incrementa (+1) -> Entra auto al primer puesto libre disponible
+    else if (diff > 0) {
+      this.vehicles.parkNewCar({
         onApproachGate: () => {
           this.audio.playServoSound();
           this.scene.setEntranceBarrier(true);
@@ -199,11 +255,9 @@ class ApplicationController {
         onComplete: () => {},
       });
     }
-    // Si decrementa (-1): Sale auto
+    // CASO 3: Decrementa (-1) -> Sale un auto que YA esté estacionado
     else if (diff < 0) {
-      const bayToEmpty = this.prevCount - 1;
-      this.uiGateOut.textContent = "Abierta";
-      this.vehicles.removeCarFromBay(bayToEmpty, {
+      this.vehicles.removeParkedCar({
         onApproachGate: () => {
           this.audio.playServoSound();
           this.scene.setExitBarrier(true);
